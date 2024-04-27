@@ -13,11 +13,12 @@ find_package(auto_aim_interfaces REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(angles REQUIRED)
+find_package(visualization_msgs REQUIRED)
 include_directories("/usr/include/eigen3/")
 
 add_executable(vision_attacker_node
 src/vision_attacker_node.cpp)
-ament_target_dependencies(${PROJECT_NAME}_node rclcpp tf2 tf2_ros angles auto_aim_interfaces vision_interfaces)
+ament_target_dependencies(${PROJECT_NAME}_node rclcpp tf2 visualization_msgs tf2_ros angles auto_aim_interfaces vision_interfaces)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
