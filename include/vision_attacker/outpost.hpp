@@ -45,8 +45,8 @@ public:
             {
                 armor_yaw -= 2 * M_PI;
             };
-            armor.x = x + time * v_x - cos(armor_yaw) * (i % 2 ? raduis_1:raduis_2);
-            armor.y = y + time * v_y - sin(armor_yaw) * (i % 2 ? raduis_1:raduis_2);
+            armor.x = x + time * v_x - cos(armor_yaw) * (i % 2 ? raduis_2:raduis_1);
+            armor.y = y + time * v_y - sin(armor_yaw) * (i % 2 ? raduis_2:raduis_1);
             armor.z = z + time * v_z + (i % 2 ? delta_z:0.0);
             armor.delta_yaw = armor_yaw - self_yaw;
             preArmors.emplace_back(armor);
@@ -84,7 +84,7 @@ public:
         v_x = 0;
         v_y = 0;
         v_z = 0;
-        v_yaw = target_msg.v_yaw > 0.5 ?0.8*M_PI : target_msg.v_yaw < 0.5 ?0.8*M_PI:0;
+        v_yaw = target_msg.v_yaw > 0.3 ?0.8*M_PI : target_msg.v_yaw < -0.3 ?-0.8*M_PI:0;
         this->self_yaw = self_yaw;
     }
     virtual std::vector<armorStates> getPreArmor(const double time){
