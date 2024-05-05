@@ -16,6 +16,8 @@ public:
         carThreshold = declare_parameter("car_attack_threshold", 30.0);
         outpostThreshold = declare_parameter("outpost_attack_threshold", 5.0);
         airK = declare_parameter("air_k", 0.04);
+        yawFix = declare_parameter("yaw_fix", 1.0);
+        pitchFix = declare_parameter("pitch_fix", 0.0);
         robotPtr = std::make_unique<vision_interfaces::msg::Robot>();
         markerPub = this->create_publisher<visualization_msgs::msg::Marker>("/aiming_point", 10);
         aimMarkerPub = this->create_publisher<visualization_msgs::msg::Marker>("/real_aiming_point", 10);
@@ -81,12 +83,14 @@ private:
         carThreshold = get_parameter("car_attack_threshold").as_double();
         outpostThreshold = get_parameter("outpost_attack_threshold").as_double();
         airK = get_parameter("air_k").as_double();
+        yawFix = get_parameter("yaw_fix").as_double();
+        pitchFix = get_parameter("pitch_fix").as_double();
 
         Eigen::Vector2d xy;
         xy << target_msg.position.x, target_msg.position.y;
         double yDis = target_msg.position.z;
         double xDis = xy.norm();
-        double speed = robotPtr->muzzle_speed > 5 ? robotPtr->muzzle_speed : 25.00;
+        double speed = robotPtr->muzzle_speed > 15 ? robotPtr->muzzle_speed : 25.00;
         double flyTime = 0;
         solveTrajectory(flyTime, xDis, yDis, lagTime, speed, 0.04);
 
@@ -97,6 +101,7 @@ private:
         if (!target_msg.tracking)
         {
             aimPub->publish(aim);
+            RCLCPP_INFO(get_logger(),"aimYaw:%05.2f/aimPitch:%05.2f",aim.aim_yaw,aim.aim_pitch);
             return;
         }
         if (target_msg.id == "outpost")
@@ -109,7 +114,7 @@ private:
                 if (abs(armor.delta_yaw) < outpostThreshold / 180.0 * M_PI)
                 {
                     aim.aim_yaw = atan2(armor.y, armor.x) * 180.0 / M_PI;
-                    aim.aim_pitch = solveTrajectory(flyTime, xDis, armor.z, lagTime, speed, 0.04) * 180.0 / M_PI;
+                    aim.aim_pitch = solveTrajectory(flyTime, xDis, armor.z, lagTime, speed, airK) * 180.0 / M_PI;
                     aim.fire = 1;
                     aimPoint.pose.position.x = armor.x;
                     aimPoint.pose.position.y = armor.y;
@@ -154,13 +159,15 @@ private:
         aimPoint.header.stamp = now();
         markerPub->publish(aimPoint);
         aimMarkerPub->publish(realAimPoint);
+        aim.aim_yaw+=yawFix;
+        aim.aim_pitch+=pitchFix;
         aimPub->publish(aim);
         RCLCPP_INFO(get_logger(),"aimYaw:%05.2f/aimPitch:%05.2f",aim.aim_yaw,aim.aim_pitch);
     };
 
     double solveTrajectory(double &flyTime, const double x, const double z, const double lagTime, const double muzzleSpeed, const double air_k)
     {
-        const double gravity = 0.978;
+        const double gravity = 9.78;
         double theta;
         double time;
         double aimZ;
@@ -192,6 +199,8 @@ private:
     double carThreshold = 30.0;
     double outpostThreshold = 5.0;
     double airK = 0.04;
+    double yawFix = 0;
+    double pitchFix = 0;
     visualization_msgs::msg::Marker aimPoint;
     visualization_msgs::msg::Marker realAimPoint;
     rclcpp::Subscription<auto_aim_interfaces::msg::Target>::SharedPtr targetSub;
