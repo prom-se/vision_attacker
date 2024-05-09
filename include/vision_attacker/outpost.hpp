@@ -45,10 +45,11 @@ public:
             {
                 armor_yaw -= 2 * M_PI;
             };
-            armor.x = x + time * v_x - cos(armor_yaw) * (i % 2 ? raduis_2:raduis_1);
-            armor.y = y + time * v_y - sin(armor_yaw) * (i % 2 ? raduis_2:raduis_1);
-            armor.z = z + time * v_z + (i % 2 ? delta_z:0.0);
+            armor.x = x + time * v_x - cos(armor_yaw) * (i % 2 ? raduis_2 : raduis_1);
+            armor.y = y + time * v_y - sin(armor_yaw) * (i % 2 ? raduis_2 : raduis_1);
+            armor.z = z + time * v_z + (i % 2 ? delta_z : 0.0);
             armor.delta_yaw = armor_yaw - self_yaw;
+            armor.delta_yaw = armor.delta_yaw > M_PI ? armor.delta_yaw - M_PI * 2 : armor.delta_yaw;
             preArmors.emplace_back(armor);
         };
         return preArmors;
@@ -78,21 +79,24 @@ public:
         y = target_msg.position.y;
         z = target_msg.position.z;
         delta_z = 0;
-        raduis_1 = 0.553/2;
+        raduis_1 = 0.553 / 2;
         raduis_2 = raduis_1;
         yaw = target_msg.yaw;
         v_x = 0;
         v_y = 0;
         v_z = 0;
-        v_yaw = target_msg.v_yaw > 0.3 ?0.8*M_PI : target_msg.v_yaw < -0.3 ?-0.8*M_PI:0;
+        v_yaw = target_msg.v_yaw > 0.3    ? 0.8 * M_PI
+                : target_msg.v_yaw < -0.3 ? -0.8 * M_PI
+                                          : 0;
         this->self_yaw = self_yaw;
     }
-    virtual std::vector<armorStates> getPreArmor(const double time){
+    virtual std::vector<armorStates> getPreArmor(const double time)
+    {
         std::vector<armorStates> preArmors;
         for (size_t i = 0; i < 3; i++)
         {
             armorStates armor;
-            double armor_yaw = yaw + time * v_yaw + 2*M_PI/3 * i;
+            double armor_yaw = yaw + time * v_yaw + 2 * M_PI / 3 * i;
             while (armor_yaw < 0)
             {
                 armor_yaw += 2 * M_PI;
@@ -110,4 +114,4 @@ public:
         return preArmors;
     }
 };
-#endif //OUT_POST_HPP
+#endif // OUT_POST_HPP

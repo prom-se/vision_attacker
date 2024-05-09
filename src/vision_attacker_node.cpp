@@ -2,22 +2,22 @@
 #include <vision_interfaces/msg/robot.hpp>
 #include <vision_interfaces/msg/auto_aim.hpp>
 #include <visualization_msgs/msg/marker.hpp>
-#include "Eigen/Dense"
 #include "auto_aim_interfaces/msg/target.hpp"
-#include "auto_aim_interfaces/msg/armors.hpp"
 #include "../include/vision_attacker/outpost.hpp"
+#include "Eigen/Dense"
 
 class Tracker_node : public rclcpp::Node
 {
 public:
     explicit Tracker_node(std::string node_name) : rclcpp::Node(node_name)
     {
-        lagTime = declare_parameter("lag_time", 0.08);
-        carThreshold = declare_parameter("car_attack_threshold", 30.0);
-        outpostThreshold = declare_parameter("outpost_attack_threshold", 5.0);
-        airK = declare_parameter("air_k", 0.04);
-        yawFix = declare_parameter("yaw_fix", 1.0);
-        pitchFix = declare_parameter("pitch_fix", 0.0);
+        lagTime = declare_parameter("trajectory.lag_time", 0.08);
+        airK = declare_parameter("trajectory.air_k", 0.04);
+        yawFix = declare_parameter("trajectory.yaw_fix", 1.0);
+        pitchFix = declare_parameter("trajectory.pitch_fix", 0.0);
+        carThreshold = declare_parameter("fire_ctrl.car_attack_threshold", 30.0);
+        outpostThreshold = declare_parameter("fire_ctrl.outpost_attack_threshold", 5.0);
+        thresholdFix = declare_parameter("fire_ctrl.threshold_fix", 0.0);
         robotPtr = std::make_unique<vision_interfaces::msg::Robot>();
         markerPub = this->create_publisher<visualization_msgs::msg::Marker>("/aiming_point", 10);
         aimMarkerPub = this->create_publisher<visualization_msgs::msg::Marker>("/real_aiming_point", 10);
@@ -64,28 +64,15 @@ private:
         }
     };
 
-    void armors_callback(const auto_aim_interfaces::msg::Armors armor)
-    {
-        try
-        {
-            *armorsPtr = armor;
-            armorsPtr->armors[0].pose.position.x;
-        }
-        catch (std::exception &ex)
-        {
-            return;
-        }
-    };
-
     void target_callback(const auto_aim_interfaces::msg::Target target_msg)
     {
-        lagTime = get_parameter("lag_time").as_double();
-        carThreshold = get_parameter("car_attack_threshold").as_double();
-        outpostThreshold = get_parameter("outpost_attack_threshold").as_double();
-        airK = get_parameter("air_k").as_double();
-        yawFix = get_parameter("yaw_fix").as_double();
-        pitchFix = get_parameter("pitch_fix").as_double();
-
+        lagTime = get_parameter("trajectory.lag_time").as_double();
+        airK = get_parameter("trajectory.air_k").as_double();
+        yawFix = get_parameter("trajectory.yaw_fix").as_double();
+        pitchFix = get_parameter("trajectory.pitch_fix").as_double();
+        carThreshold = get_parameter("fire_ctrl.car_attack_threshold").as_double();
+        outpostThreshold = get_parameter("fire_ctrl.outpost_attack_threshold").as_double();
+        thresholdFix = get_parameter("fire_ctrl.threshold_fix").as_double();
         Eigen::Vector2d xy;
         xy << target_msg.position.x, target_msg.position.y;
         double yDis = target_msg.position.z;
@@ -101,68 +88,52 @@ private:
         if (!target_msg.tracking)
         {
             aimPub->publish(aim);
-            RCLCPP_INFO(get_logger(),"aimYaw:%05.2f/aimPitch:%05.2f",aim.aim_yaw,aim.aim_pitch);
+            RCLCPP_INFO(get_logger(), "aimYaw:%05.2f/aimPitch:%05.2f", aim.aim_yaw, aim.aim_pitch);
             return;
-        }
-        if (target_msg.id == "outpost")
-        {
-            outpostStates foeOutpost;
-            foeOutpost.update(target_msg, robotPtr->self_yaw / 180.0 * M_PI);
-            std::vector<armorStates> armors = foeOutpost.getPreArmor(flyTime);
-            for (const auto armor : armors)
-            {
-                if (abs(armor.delta_yaw) < outpostThreshold / 180.0 * M_PI)
-                {
-                    aim.aim_yaw = atan2(armor.y, armor.x) * 180.0 / M_PI;
-                    aim.aim_pitch = solveTrajectory(flyTime, xDis, armor.z, lagTime, speed, airK) * 180.0 / M_PI;
-                    aim.fire = 1;
-                    aimPoint.pose.position.x = armor.x;
-                    aimPoint.pose.position.y = armor.y;
-                    aimPoint.pose.position.z = armor.z;
-                    realAimPoint.pose.position.x = (xDis-target_msg.radius_1) * cos(robotPtr->self_yaw / 180.0 * M_PI);
-                    realAimPoint.pose.position.y = (xDis-target_msg.radius_1) * sin(robotPtr->self_yaw / 180.0 * M_PI);
-                    realAimPoint.pose.position.z = (xDis-target_msg.radius_1) * tan(robotPtr->self_pitch / 180.0 * M_PI);
-                    break;
-                }
-                else
-                {
-                    continue;
-                }
-            }
         }
         else
         {
-            carStates foeCar;
-            foeCar.update(target_msg, robotPtr->self_yaw / 180.0 * M_PI);
-            std::vector<armorStates> armors = foeCar.getPreArmor(flyTime);
-            for (const auto armor : armors)
+            std::vector<armorStates> armors;
+            if (target_msg.id == "outpost")
             {
-                if (abs(armor.delta_yaw) < carThreshold / 180.0 * M_PI)
-                {
-                    aim.aim_yaw = atan2(armor.y, armor.x) * 180.0 / M_PI;
-                    aim.aim_pitch = solveTrajectory(flyTime, xDis, armor.z, lagTime, speed, airK) * 180.0 / M_PI;
-                    aim.fire = 1;
-                    aimPoint.pose.position.x = armor.x;
-                    aimPoint.pose.position.y = armor.y;
-                    aimPoint.pose.position.z = armor.z;
-                    realAimPoint.pose.position.x = (xDis-target_msg.radius_1) * cos(robotPtr->self_yaw / 180.0 * M_PI);
-                    realAimPoint.pose.position.y = (xDis-target_msg.radius_1) * sin(robotPtr->self_yaw / 180.0 * M_PI);
-                    realAimPoint.pose.position.z = (xDis-target_msg.radius_1) * tan(robotPtr->self_pitch / 180.0 * M_PI);
-                    break;
-                }
-                else
-                {
-                    continue;
-                }
+                outpostStates foeOutpost;
+                foeOutpost.update(target_msg, robotPtr->self_yaw / 180.0 * M_PI);
+                armors = foeOutpost.getPreArmor(flyTime);
             }
+            else
+            {
+                carStates foeCar;
+                foeCar.update(target_msg, robotPtr->self_yaw / 180.0 * M_PI);
+                armors = foeCar.getPreArmor(flyTime);
+            }
+            std::sort(armors.begin(), armors.end(), [](const auto &armor1, const auto &armor2)
+                      { return armor1.delta_yaw < armor2.delta_yaw; });
+            if (-outpostThreshold + thresholdFix / 180.0 * M_PI < armors[0].delta_yaw && armors[0].delta_yaw < outpostThreshold + thresholdFix / 180.0 * M_PI)
+            {
+                aim.aim_yaw = atan2(armors[0].y, armors[0].x) * 180.0 / M_PI;
+                aim.aim_pitch = solveTrajectory(flyTime, xDis, armors[0].z, lagTime, speed, airK) * 180.0 / M_PI;
+                aim.fire = 1;
+                aimPoint.pose.position.x = armors[0].x;
+                aimPoint.pose.position.y = armors[0].y;
+                aimPoint.pose.position.z = armors[0].z;
+                realAimPoint.pose.position.x = xDis - target_msg.radius_1 * cos(robotPtr->self_yaw / 180.0 * M_PI);
+                realAimPoint.pose.position.y = xDis - target_msg.radius_1 * sin(robotPtr->self_yaw / 180.0 * M_PI);
+                realAimPoint.pose.position.z = xDis - target_msg.radius_1 * tan(robotPtr->self_pitch / 180.0 * M_PI);
+            }
+            else
+            {
+                aim.aim_yaw = target_msg.v_yaw > 0.5 ? robotPtr->self_yaw + outpostThreshold + thresholdFix : robotPtr->self_yaw - outpostThreshold + thresholdFix;
+                aim.aim_pitch = robotPtr->self_pitch;
+                aim.fire = 0;
+            }
+            aimPoint.header.stamp = now();
+            markerPub->publish(aimPoint);
+            aimMarkerPub->publish(realAimPoint);
+            aim.aim_yaw += yawFix;
+            aim.aim_pitch += pitchFix;
+            aimPub->publish(aim);
+            RCLCPP_INFO(get_logger(), "aimYaw:%05.2f/aimPitch:%05.2f", aim.aim_yaw, aim.aim_pitch);
         }
-        aimPoint.header.stamp = now();
-        markerPub->publish(aimPoint);
-        aimMarkerPub->publish(realAimPoint);
-        aim.aim_yaw+=yawFix;
-        aim.aim_pitch+=pitchFix;
-        aimPub->publish(aim);
-        RCLCPP_INFO(get_logger(),"aimYaw:%05.2f/aimPitch:%05.2f",aim.aim_yaw,aim.aim_pitch);
     };
 
     double solveTrajectory(double &flyTime, const double x, const double z, const double lagTime, const double muzzleSpeed, const double air_k)
@@ -196,16 +167,16 @@ private:
         return atan2(targetZ, x);
     }
     double lagTime = 0.08;
-    double carThreshold = 30.0;
-    double outpostThreshold = 5.0;
     double airK = 0.04;
     double yawFix = 0;
     double pitchFix = 0;
+    double thresholdFix = 0;
+    double carThreshold = 30.0;
+    double outpostThreshold = 5.0;
     visualization_msgs::msg::Marker aimPoint;
     visualization_msgs::msg::Marker realAimPoint;
     rclcpp::Subscription<auto_aim_interfaces::msg::Target>::SharedPtr targetSub;
     std::unique_ptr<vision_interfaces::msg::Robot> robotPtr;
-    std::unique_ptr<auto_aim_interfaces::msg::Armors> armorsPtr;
     rclcpp::Subscription<vision_interfaces::msg::Robot>::SharedPtr robotSub;
     rclcpp::Publisher<vision_interfaces::msg::AutoAim>::SharedPtr aimPub;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr markerPub;
@@ -215,7 +186,7 @@ private:
 int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<Tracker_node>("attacker");
+    auto node = std::make_shared<Tracker_node>("vision_attacker");
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
