@@ -77,7 +77,7 @@ private:
         xy << target_msg.position.x, target_msg.position.y;
         double yDis = target_msg.position.z;
         double xDis = xy.norm();
-        double speed = robotPtr->muzzle_speed > 15 ? robotPtr->muzzle_speed : 25.00;
+        double speed = robotPtr->muzzle_speed > 15 ? robotPtr->muzzle_speed : 15.00;
         double flyTime = 0;
         solveTrajectory(flyTime, xDis, yDis, lagTime, speed, 0.04);
 
@@ -94,29 +94,21 @@ private:
         }
         else
         {
-            std::vector<armorStates> armors;
-            double threshold=0;
-            if (target_msg.id == "outpost")
-            {
-                threshold = outpostThreshold;
-                outpostStates foeOutpost;
-                foeOutpost.update(target_msg, robotPtr->self_yaw / 180.0 * M_PI);
-                armors = foeOutpost.getPreArmor(flyTime);
-            }
-            else
-            {
-                threshold = carThreshold;
-                carStates foeCar;
-                foeCar.update(target_msg, robotPtr->self_yaw / 180.0 * M_PI);
-                armors = foeCar.getPreArmor(flyTime);
-            }
+            double threshold = target_msg.id == "outpost" ? outpostThreshold : carThreshold;
+            std::shared_ptr<carStates> states = target_msg.id == "outpost" ? std::make_shared<outpostStates>() : std::make_shared<carStates>();
+            states->update(target_msg, robotPtr->self_yaw / 180.0 * M_PI);
+            std::vector<armorStates> armors = states->getPreArmor(flyTime);
             std::sort(armors.begin(), armors.end(), [](const auto &armor1, const auto &armor2)
                       { return abs(armor1.delta_yaw) < abs(armor2.delta_yaw); });
             if ((-threshold + thresholdFix) / 180.0 * M_PI < armors[0].delta_yaw && armors[0].delta_yaw < (threshold + thresholdFix) / 180.0 * M_PI)
             {
                 aim.aim_yaw = atan2(armors[0].y, armors[0].x) * 180.0 / M_PI;
+                aim.aim_yaw = aim.aim_yaw < 0     ? aim.aim_yaw + 360.0
+                              : aim.aim_yaw > 360 ? aim.aim_yaw - 360.0
+                                                  : aim.aim_yaw;
+                xDis = std::sqrt(armors[0].x * armors[0].x + armors[0].y * armors[0].y);
                 aim.aim_pitch = solveTrajectory(flyTime, xDis, armors[0].z, lagTime, speed, airK) * 180.0 / M_PI;
-                aim.fire = abs(aim.aim_yaw-robotPtr->self_yaw)<5.0 && abs(aim.aim_pitch-robotPtr->self_pitch)<5.0?1:0;
+                aim.fire = abs(aim.aim_yaw - robotPtr->self_yaw) < 5.0 && abs(aim.aim_pitch - robotPtr->self_pitch) < 5.0 ? 1 : 0;
                 aimPoint.pose.position.x = armors[0].x;
                 aimPoint.pose.position.y = armors[0].y;
                 aimPoint.pose.position.z = armors[0].z;
@@ -127,15 +119,17 @@ private:
             else
             {
                 aim.fire = 0;
-                aim.aim_yaw = robotPtr->self_yaw;
-                aim.aim_pitch = robotPtr->self_pitch;
+                double x, y, z;
+                x = target_msg.position.x - target_msg.radius_1 * cos(robotPtr->self_yaw / 180.0 * M_PI);
+                y = target_msg.position.y - target_msg.radius_1 * sin(robotPtr->self_yaw / 180.0 * M_PI);
+                z = target_msg.position.z;
+                xDis = std::sqrt(x * x + y * y);
+                aim.aim_yaw = atan2(y, x) * 180.0 / M_PI;
+                aim.aim_pitch = solveTrajectory(flyTime, xDis, z, lagTime, speed, airK) * 180.0 / M_PI;
             }
             aimPoint.header.stamp = now();
             markerPub->publish(aimPoint);
             aimMarkerPub->publish(realAimPoint);
-            aim.aim_yaw = aim.aim_yaw < 0     ? aim.aim_yaw + 360.0
-                : aim.aim_yaw > 360 ? aim.aim_yaw - 360.0
-                                    : aim.aim_yaw;
             aim.aim_yaw += yawFix;
             aim.aim_pitch += pitchFix;
             aim.tracking = 1;
