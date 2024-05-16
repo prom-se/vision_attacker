@@ -95,24 +95,28 @@ private:
         else
         {
             std::vector<armorStates> armors;
+            double threshold=0;
             if (target_msg.id == "outpost")
             {
+                threshold = outpostThreshold;
                 outpostStates foeOutpost;
                 foeOutpost.update(target_msg, robotPtr->self_yaw / 180.0 * M_PI);
                 armors = foeOutpost.getPreArmor(flyTime);
             }
             else
             {
+                threshold = carThreshold;
                 carStates foeCar;
                 foeCar.update(target_msg, robotPtr->self_yaw / 180.0 * M_PI);
                 armors = foeCar.getPreArmor(flyTime);
             }
             std::sort(armors.begin(), armors.end(), [](const auto &armor1, const auto &armor2)
-                      { return armor1.delta_yaw > armor2.delta_yaw; });
-            if (-outpostThreshold + thresholdFix / 180.0 * M_PI < armors[0].delta_yaw && armors[0].delta_yaw < outpostThreshold + thresholdFix / 180.0 * M_PI)
+                      { return abs(armor1.delta_yaw) < abs(armor2.delta_yaw); });
+            if ((-threshold + thresholdFix) / 180.0 * M_PI < armors[0].delta_yaw && armors[0].delta_yaw < (threshold + thresholdFix) / 180.0 * M_PI)
             {
                 aim.aim_yaw = atan2(armors[0].y, armors[0].x) * 180.0 / M_PI;
                 aim.aim_pitch = solveTrajectory(flyTime, xDis, armors[0].z, lagTime, speed, airK) * 180.0 / M_PI;
+                aim.fire = abs(aim.aim_yaw-robotPtr->self_yaw)<5.0 && abs(aim.aim_pitch-robotPtr->self_pitch)<5.0?1:0;
                 aimPoint.pose.position.x = armors[0].x;
                 aimPoint.pose.position.y = armors[0].y;
                 aimPoint.pose.position.z = armors[0].z;
@@ -122,7 +126,8 @@ private:
             }
             else
             {
-                aim.aim_yaw = target_msg.v_yaw > 0.5 ? robotPtr->self_yaw + outpostThreshold + thresholdFix : robotPtr->self_yaw - outpostThreshold + thresholdFix;
+                aim.fire = 0;
+                aim.aim_yaw = robotPtr->self_yaw;
                 aim.aim_pitch = robotPtr->self_pitch;
             }
             aimPoint.header.stamp = now();
@@ -133,7 +138,6 @@ private:
                                     : aim.aim_yaw;
             aim.aim_yaw += yawFix;
             aim.aim_pitch += pitchFix;
-            aim.fire = abs(aim.aim_yaw-robotPtr->self_yaw)<5.0 && abs(aim.aim_pitch-robotPtr->self_pitch)<5.0?1:0;
             aim.tracking = 1;
             aimPub->publish(aim);
             RCLCPP_INFO(get_logger(), "aimYaw:%05.2f/aimPitch:%05.2f", aim.aim_yaw, aim.aim_pitch);
